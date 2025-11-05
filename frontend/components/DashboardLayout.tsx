@@ -20,12 +20,22 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mounted, setMounted] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [contentMenuOpen, setContentMenuOpen] = useState(false);
+  const [apiKeysMenuOpen, setApiKeysMenuOpen] = useState(false);
 
   useEffect(() => {
     setMounted(true);
     // Auto expand user menu if on user-related pages
     if (pathname?.startsWith('/dashboard/users') || pathname?.startsWith('/dashboard/login-history')) {
       setUserMenuOpen(true);
+    }
+    // Auto expand content menu if on content-related pages
+    if (pathname?.startsWith('/dashboard/content')) {
+      setContentMenuOpen(true);
+    }
+    // Auto expand api keys menu if on api keys related pages
+    if (pathname?.startsWith('/dashboard/api-keys')) {
+      setApiKeysMenuOpen(true);
     }
   }, [pathname]);
 
@@ -64,6 +74,36 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
       ),
+      hasSubmenu: true,
+      submenu: [
+        {
+          name: 'Tạo Ideas',
+          path: '/dashboard/content/ideas',
+          icon: (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+          ),
+        },
+        {
+          name: 'Tạo Briefs',
+          path: '/dashboard/content/briefs',
+          icon: (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          ),
+        },
+        {
+          name: 'Tạo Draft',
+          path: '/dashboard/content/draft',
+          icon: (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          ),
+        },
+      ],
     },
     {
       name: t('dashboard.apiKeys'),
@@ -73,6 +113,27 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
         </svg>
       ),
+      hasSubmenu: true,
+      submenu: [
+        {
+          name: 'Danh sách API Key',
+          path: '/dashboard/api-keys/list',
+          icon: (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          ),
+        },
+        {
+          name: 'Lịch sử sử dụng API Key',
+          path: '/dashboard/api-keys/history',
+          icon: (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          ),
+        },
+      ],
     },
   ];
 
@@ -107,7 +168,15 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   {item.hasSubmenu ? (
                     <div>
                       <button
-                        onClick={() => setUserMenuOpen(!userMenuOpen)}
+                        onClick={() => {
+                          if (item.path === '/dashboard/users') {
+                            setUserMenuOpen(!userMenuOpen);
+                          } else if (item.path === '/dashboard/content') {
+                            setContentMenuOpen(!contentMenuOpen);
+                          } else if (item.path === '/dashboard/api-keys') {
+                            setApiKeysMenuOpen(!apiKeysMenuOpen);
+                          }
+                        }}
                         className={`w-full flex items-center justify-between p-2 rounded-lg transition-colors ${
                           isActive || hasActiveSubmenu
                             ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300'
@@ -119,7 +188,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                           <span className="ml-3">{item.name}</span>
                         </div>
                         <svg
-                          className={`w-4 h-4 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`}
+                          className={`w-4 h-4 transition-transform ${
+                            (item.path === '/dashboard/users' && userMenuOpen) || 
+                            (item.path === '/dashboard/content' && contentMenuOpen) ||
+                            (item.path === '/dashboard/api-keys' && apiKeysMenuOpen)
+                              ? 'rotate-180' : ''
+                          }`}
                           fill="none"
                           stroke="currentColor"
                           viewBox="0 0 24 24"
@@ -129,23 +203,27 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                       </button>
                       
                       {/* Submenu */}
-                      {userMenuOpen && item.submenu && (
+                      {((item.path === '/dashboard/users' && userMenuOpen) || 
+                        (item.path === '/dashboard/content' && contentMenuOpen) ||
+                        (item.path === '/dashboard/api-keys' && apiKeysMenuOpen)) && item.submenu && (
                         <ul className="ml-4 mt-2 space-y-1">
-                          <li>
-                            <Link
-                              href={item.path}
-                              className={`flex items-center p-2 rounded-lg transition-colors text-sm ${
-                                pathname === item.path
-                                  ? 'bg-blue-50 dark:bg-blue-900/50 text-blue-600 dark:text-blue-300'
-                                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                              }`}
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                              </svg>
-                              <span className="ml-3">Danh sách người dùng</span>
-                            </Link>
-                          </li>
+                          {item.path === '/dashboard/users' && (
+                            <li>
+                              <Link
+                                href={item.path}
+                                className={`flex items-center p-2 rounded-lg transition-colors text-sm ${
+                                  pathname === item.path
+                                    ? 'bg-blue-50 dark:bg-blue-900/50 text-blue-600 dark:text-blue-300'
+                                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                }`}
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                                </svg>
+                                <span className="ml-3">Danh sách người dùng</span>
+                              </Link>
+                            </li>
+                          )}
                           {item.submenu.map((subItem) => (
                             <li key={subItem.path}>
                               <Link
