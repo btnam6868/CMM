@@ -1,0 +1,16 @@
+{
+  "name": "content-multiplier",
+  "version": "1.0.0",
+  "description": "Content Multiplier - AI-powered content generation platform",
+  "scripts": {
+    "docker:start": "./scripts/start.sh",
+    "docker:stop": "./scripts/stop.sh",
+    "docker:rebuild": "./scripts/rebuild.sh",
+    "docker:logs": "./scripts/logs.sh",
+    "docker:reset-db": "./scripts/reset-db.sh",
+    "deploy": "./scripts/deploy.sh"
+  },
+  "keywords": ["ai", "content", "generation", "multiplier"],
+  "author": "",
+  "license": "ISC"
+}
