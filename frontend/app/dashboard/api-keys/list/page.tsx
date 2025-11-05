@@ -5,14 +5,30 @@ import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import DashboardLayout from '@/components/DashboardLayout';
+import api from '@/lib/api';
+import toast from 'react-hot-toast';
 
 interface ApiKey {
   id: string;
   api_key: string;
   provider: string;
-  counter_call: number;
+  name?: string;
+  usage_count: number;
+  is_active: boolean;
   created_at: string;
 }
+
+const PROVIDERS = [
+  'gemini',
+  'gpt-oss',
+  'qwen',
+  'glm',
+  'deepseek',
+  'minimax',
+  'llama',
+  'nemotron',
+  'gemma'
+];
 
 export default function ApiKeysListPage() {
   const router = useRouter();
@@ -24,46 +40,127 @@ export default function ApiKeysListPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [providerFilter, setProviderFilter] = useState<string>('all');
 
+  // Modal states
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingKey, setEditingKey] = useState<ApiKey | null>(null);
+  const [formData, setFormData] = useState({
+    provider: '',
+    api_key: '',
+    name: ''
+  });
+
+  // Delete confirmation states
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deletingKey, setDeletingKey] = useState<ApiKey | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   useEffect(() => {
     setMounted(true);
     if (!token) {
       router.push('/login');
     } else {
-      // TODO: Fetch API keys from backend
-      // fetchApiKeys();
-      setLoading(false);
-      
-      // Mock data for demonstration
-      setApiKeys([
-        {
-          id: '1',
-          api_key: 'sk-proj-1234567890abcdefghijklmnopqrstuvwxyz',
-          provider: 'OpenAI',
-          counter_call: 1250,
-          created_at: '2025-01-15T10:30:00Z',
-        },
-        {
-          id: '2',
-          api_key: 'AIzaSyDXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
-          provider: 'Gemini',
-          counter_call: 850,
-          created_at: '2025-01-20T14:20:00Z',
-        },
-        {
-          id: '3',
-          api_key: 'sk-deepseek-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
-          provider: 'Deepseek',
-          counter_call: 320,
-          created_at: '2025-02-01T09:15:00Z',
-        },
-      ]);
+      fetchApiKeys();
     }
   }, [token, router]);
 
+  const fetchApiKeys = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get('/api/api-keys');
+      setApiKeys(response.data.apiKeys);
+    } catch (error: any) {
+      console.error('Error fetching API keys:', error);
+      toast.error('Không thể tải danh sách API keys');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpenAddModal = () => {
+    setIsEditing(false);
+    setEditingKey(null);
+    setFormData({ provider: '', api_key: '', name: '' });
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEditModal = (apiKey: ApiKey) => {
+    setIsEditing(true);
+    setEditingKey(apiKey);
+    setFormData({
+      provider: apiKey.provider,
+      api_key: apiKey.api_key,
+      name: apiKey.name || ''
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setIsEditing(false);
+    setEditingKey(null);
+    setFormData({ provider: '', api_key: '', name: '' });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!formData.provider || !formData.api_key) {
+      toast.error('Vui lòng điền đầy đủ thông tin bắt buộc');
+      return;
+    }
+
+    try {
+      if (isEditing && editingKey) {
+        await api.put(`/api/api-keys/${editingKey.id}`, formData);
+        toast.success('Cập nhật API key thành công!');
+      } else {
+        await api.post('/api/api-keys', formData);
+        toast.success('Thêm API key thành công!');
+      }
+
+      handleCloseModal();
+      fetchApiKeys();
+    } catch (error: any) {
+      console.error('Error saving API key:', error);
+      const message = error.response?.data?.message || 'Có lỗi xảy ra';
+      toast.error(message);
+    }
+  };
+
+  const handleOpenDeleteConfirm = (apiKey: ApiKey) => {
+    setDeletingKey(apiKey);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleCloseDeleteConfirm = () => {
+    setDeleteConfirmOpen(false);
+    setDeletingKey(null);
+  };
+
+  const handleDelete = async () => {
+    if (!deletingKey) return;
+
+    try {
+      setIsDeleting(true);
+      await api.delete(`/api/api-keys/${deletingKey.id}`);
+      toast.success('Xóa API key thành công!');
+      handleCloseDeleteConfirm();
+      fetchApiKeys();
+    } catch (error: any) {
+      console.error('Error deleting API key:', error);
+      const message = error.response?.data?.message || 'Có lỗi xảy ra';
+      toast.error(message);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const filteredApiKeys = apiKeys.filter((key) => {
-    const matchesSearch = 
+    const matchesSearch =
       key.api_key.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      key.provider.toLowerCase().includes(searchQuery.toLowerCase());
+      key.provider.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (key.name && key.name.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesProvider = providerFilter === 'all' || key.provider === providerFilter;
     return matchesSearch && matchesProvider;
   });
@@ -77,22 +174,23 @@ export default function ApiKeysListPage() {
   };
 
   const truncateApiKey = (apiKey: string) => {
-    return apiKey.substring(0, 20) + '...';
+    if (apiKey.length <= 30) return apiKey;
+    return apiKey.substring(0, 15) + '...' + apiKey.substring(apiKey.length - 10);
   };
 
   const getProviderColor = (provider: string) => {
-    switch (provider.toLowerCase()) {
-      case 'openai':
-        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-      case 'gemini':
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
-      case 'deepseek':
-        return 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200';
-      case 'anthropic':
-        return 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200';
-      default:
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
-    }
+    const colors: Record<string, string> = {
+      'gemini': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+      'gpt-oss': 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+      'qwen': 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+      'glm': 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
+      'deepseek': 'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200',
+      'minimax': 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200',
+      'llama': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+      'nemotron': 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200',
+      'gemma': 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200',
+    };
+    return colors[provider.toLowerCase()] || 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200';
   };
 
   if (!mounted || !token) {
@@ -112,7 +210,10 @@ export default function ApiKeysListPage() {
               Quản lý các API keys của bạn
             </p>
           </div>
-          <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-lg hover:shadow-xl">
+          <button
+            onClick={handleOpenAddModal}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-lg hover:shadow-xl"
+          >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
@@ -140,7 +241,7 @@ export default function ApiKeysListPage() {
               <div>
                 <p className="text-sm text-purple-100">Total Calls</p>
                 <p className="text-3xl font-bold mt-1">
-                  {apiKeys.reduce((sum, key) => sum + key.counter_call, 0).toLocaleString()}
+                  {apiKeys.reduce((sum, key) => sum + key.usage_count, 0).toLocaleString()}
                 </p>
               </div>
               <div className="bg-white/20 p-3 rounded-lg">
@@ -179,7 +280,7 @@ export default function ApiKeysListPage() {
                 </div>
                 <input
                   type="text"
-                  placeholder="Search by API key or provider..."
+                  placeholder="Search by API key, provider, or name..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -193,10 +294,11 @@ export default function ApiKeysListPage() {
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="all">All Providers</option>
-                <option value="OpenAI">OpenAI</option>
-                <option value="Gemini">Gemini</option>
-                <option value="Deepseek">Deepseek</option>
-                <option value="Anthropic">Anthropic</option>
+                {PROVIDERS.map(provider => (
+                  <option key={provider} value={provider}>
+                    {provider.charAt(0).toUpperCase() + provider.slice(1)}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -209,13 +311,16 @@ export default function ApiKeysListPage() {
               <thead className="bg-gray-50 dark:bg-gray-700">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    Tên
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Mã API Key
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Provider
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Counter Call
+                    Usage Count
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Create Date
@@ -228,22 +333,33 @@ export default function ApiKeysListPage() {
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {loading ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
-                      Loading...
+                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
+                      <div className="flex items-center justify-center gap-2">
+                        <svg className="animate-spin h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Loading...
+                      </div>
                     </td>
                   </tr>
                 ) : filteredApiKeys.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
-                      No API keys found.
+                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
+                      Không tìm thấy API key nào.
                     </td>
                   </tr>
                 ) : (
                   filteredApiKeys.map((apiKey) => (
                     <tr key={apiKey.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                       <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="text-sm font-medium text-gray-900 dark:text-white">
+                          {apiKey.name || '-'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
-                          <code className="text-sm font-mono text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+                          <code className="text-xs font-mono text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
                             {truncateApiKey(apiKey.api_key)}
                           </code>
                         </div>
@@ -256,10 +372,10 @@ export default function ApiKeysListPage() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <svg className="w-4 h-4 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 4 0 01-2 2h-2a2 2 0 01-2-2z" />
                           </svg>
                           <span className="text-sm font-medium text-gray-900 dark:text-white">
-                            {apiKey.counter_call.toLocaleString()}
+                            {apiKey.usage_count.toLocaleString()}
                           </span>
                         </div>
                       </td>
@@ -269,6 +385,7 @@ export default function ApiKeysListPage() {
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-start gap-2">
                           <button
+                            onClick={() => handleOpenEditModal(apiKey)}
                             className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
                             title="Edit API Key"
                           >
@@ -277,6 +394,7 @@ export default function ApiKeysListPage() {
                             </svg>
                           </button>
                           <button
+                            onClick={() => handleOpenDeleteConfirm(apiKey)}
                             className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
                             title="Delete API Key"
                           >
@@ -294,6 +412,135 @@ export default function ApiKeysListPage() {
           </div>
         </div>
       </div>
+
+      {/* Add/Edit Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+                {isEditing ? 'Chỉnh sửa API Key' : 'Thêm API Key mới'}
+              </h2>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Provider <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={formData.provider}
+                    onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="">Chọn provider</option>
+                    {PROVIDERS.map(provider => (
+                      <option key={provider} value={provider}>
+                        {provider.charAt(0).toUpperCase() + provider.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    API Key <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    value={formData.api_key}
+                    onChange={(e) => setFormData({ ...formData, api_key: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+                    rows={3}
+                    placeholder="sk-..."
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Tên (tùy chọn)
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Ví dụ: Production Key"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={handleCloseModal}
+                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    {isEditing ? 'Cập nhật' : 'Thêm'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      {deleteConfirmOpen && deletingKey && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center gap-3 text-red-600 dark:text-red-400 mb-4">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                  Xác nhận xóa
+                </h2>
+              </div>
+              <p className="text-gray-600 dark:text-gray-400 mb-6">
+                Bạn có chắc chắn muốn xóa API key <strong>{deletingKey.name || 'này'}</strong>?
+                <br />
+                <span className="text-sm">Provider: <strong>{deletingKey.provider}</strong></span>
+                <br />
+                <span className="text-xs text-red-500">Hành động này không thể hoàn tác.</span>
+              </p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={handleCloseDeleteConfirm}
+                  disabled={isDeleting}
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isDeleting ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Đang xóa...
+                    </>
+                  ) : (
+                    'Xóa'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 }
