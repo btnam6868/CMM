@@ -16,9 +16,18 @@ interface ApiKey {
   usage_count: number;
   is_active: boolean;
   created_at: string;
+  connection_status?: string;
+  last_tested_at?: string;
+  test_message?: string;
+}
+
+interface TestStatus {
+  status: 'idle' | 'testing' | 'success' | 'error';
+  message?: string;
 }
 
 const PROVIDERS = [
+  'openrouter',
   'gemini',
   'gpt-oss',
   'qwen',
@@ -39,6 +48,7 @@ export default function ApiKeysListPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [providerFilter, setProviderFilter] = useState<string>('all');
+  const [testStatuses, setTestStatuses] = useState<Record<string, TestStatus>>({});
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -156,6 +166,45 @@ export default function ApiKeysListPage() {
     }
   };
 
+  const handleTestConnection = async (apiKey: ApiKey) => {
+    try {
+      // Set testing status
+      setTestStatuses(prev => ({
+        ...prev,
+        [apiKey.id]: { status: 'testing' }
+      }));
+
+      const response = await api.post(`/api/api-keys/${apiKey.id}/test`);
+
+      if (response.data.success) {
+        toast.success('Kết nối thành công!');
+        // Refresh API keys to get updated status from DB
+        fetchApiKeys();
+      } else {
+        toast.error('Kết nối thất bại!');
+        // Refresh API keys to get updated status from DB
+        fetchApiKeys();
+      }
+
+      // Clear testing status
+      setTestStatuses(prev => {
+        const newStatuses = { ...prev };
+        delete newStatuses[apiKey.id];
+        return newStatuses;
+      });
+    } catch (error: any) {
+      console.error('Error testing API key:', error);
+      setTestStatuses(prev => {
+        const newStatuses = { ...prev };
+        delete newStatuses[apiKey.id];
+        return newStatuses;
+      });
+      toast.error('Không thể test kết nối!');
+      // Still refresh to ensure consistency
+      fetchApiKeys();
+    }
+  };
+
   const filteredApiKeys = apiKeys.filter((key) => {
     const matchesSearch =
       key.api_key.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -180,6 +229,7 @@ export default function ApiKeysListPage() {
 
   const getProviderColor = (provider: string) => {
     const colors: Record<string, string> = {
+      'openrouter': 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200',
       'gemini': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
       'gpt-oss': 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
       'qwen': 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
@@ -311,13 +361,16 @@ export default function ApiKeysListPage() {
               <thead className="bg-gray-50 dark:bg-gray-700">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Tên
+                    Tên Model
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Mã API Key
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Provider
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    Trạng thái
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Usage Count
@@ -333,7 +386,7 @@ export default function ApiKeysListPage() {
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={7} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
                       <div className="flex items-center justify-center gap-2">
                         <svg className="animate-spin h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -345,7 +398,7 @@ export default function ApiKeysListPage() {
                   </tr>
                 ) : filteredApiKeys.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={7} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
                       Không tìm thấy API key nào.
                     </td>
                   </tr>
@@ -370,6 +423,35 @@ export default function ApiKeysListPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
+                        {testStatuses[apiKey.id]?.status === 'testing' ? (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                            <svg className="animate-spin -ml-1 mr-2 h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Đang kiểm tra...
+                          </span>
+                        ) : apiKey.connection_status === 'success' ? (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" title={apiKey.test_message}>
+                            <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                            </svg>
+                            Thành công
+                          </span>
+                        ) : apiKey.connection_status === 'failed' ? (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200" title={apiKey.test_message}>
+                            <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                            </svg>
+                            Không thành công
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+                            Chưa kiểm tra
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <svg className="w-4 h-4 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 4 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -384,6 +466,16 @@ export default function ApiKeysListPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-start gap-2">
+                          <button
+                            onClick={() => handleTestConnection(apiKey)}
+                            disabled={testStatuses[apiKey.id]?.status === 'testing'}
+                            className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300 p-2 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Test Connection"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                          </button>
                           <button
                             onClick={() => handleOpenEditModal(apiKey)}
                             className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"

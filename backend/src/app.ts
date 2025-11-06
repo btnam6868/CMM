@@ -6,6 +6,8 @@ import authRoutes from './routes/auth.js';
 import usersRoutes from './routes/users.js';
 import loginHistoryRoutes from './routes/login-history.js';
 import apiKeysRoutes from './routes/api-keys.js';
+import ideasRoutes from './routes/ideas.js';
+import briefsRoutes from './routes/briefs.js';
 
 const app = Fastify({
   logger: {
@@ -42,6 +44,8 @@ await app.register(authRoutes);
 await app.register(usersRoutes);
 await app.register(loginHistoryRoutes);
 await app.register(apiKeysRoutes);
+await app.register(ideasRoutes);
+await app.register(briefsRoutes);
 
 // Health check route
 app.get('/health', async (request, reply) => {

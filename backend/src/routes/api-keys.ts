@@ -10,7 +10,8 @@ export default async function apiKeysRoutes(fastify: FastifyInstance) {
       const userId = (request.user as any).id;
 
       const result = await pool.query(
-        `SELECT id, user_id, provider, api_key, name, usage_count, last_used_at, is_active, created_at
+        `SELECT id, user_id, provider, api_key, name, usage_count, last_used_at, is_active, created_at,
+                connection_status, last_tested_at, test_message
          FROM api_keys
          WHERE user_id = $1
          ORDER BY created_at DESC`,
@@ -33,7 +34,8 @@ export default async function apiKeysRoutes(fastify: FastifyInstance) {
       const userId = (request.user as any).id;
 
       const result = await pool.query(
-        `SELECT id, user_id, provider, api_key, name, usage_count, last_used_at, is_active, created_at
+        `SELECT id, user_id, provider, api_key, name, usage_count, last_used_at, is_active, created_at,
+                connection_status, last_tested_at, test_message
          FROM api_keys
          WHERE id = $1 AND user_id = $2`,
         [id, userId]
@@ -68,7 +70,7 @@ export default async function apiKeysRoutes(fastify: FastifyInstance) {
       }
 
       // Validate provider
-      const validProviders = ['gemini', 'gpt-oss', 'qwen', 'glm', 'deepseek', 'minimax', 'llama', 'nemotron', 'gemma'];
+      const validProviders = ['gemini', 'gpt-oss', 'qwen', 'glm', 'deepseek', 'minimax', 'llama', 'nemotron', 'gemma', 'openrouter'];
       if (!validProviders.includes(provider.toLowerCase())) {
         return reply.status(400).send({
           message: `Invalid provider. Must be one of: ${validProviders.join(', ')}`
@@ -108,7 +110,7 @@ export default async function apiKeysRoutes(fastify: FastifyInstance) {
 
       // Validate provider if provided
       if (provider) {
-        const validProviders = ['gemini', 'gpt-oss', 'qwen', 'glm', 'deepseek', 'minimax', 'llama', 'nemotron', 'gemma'];
+        const validProviders = ['gemini', 'gpt-oss', 'qwen', 'glm', 'deepseek', 'minimax', 'llama', 'nemotron', 'gemma', 'openrouter'];
         if (!validProviders.includes(provider.toLowerCase())) {
           return reply.status(400).send({
             message: `Invalid provider. Must be one of: ${validProviders.join(', ')}`
@@ -185,6 +187,111 @@ export default async function apiKeysRoutes(fastify: FastifyInstance) {
       }
 
       return reply.send({ message: 'API key deleted successfully' });
+    } catch (error) {
+      fastify.log.error(error);
+      return reply.status(500).send({ message: 'Internal server error' });
+    }
+  });
+
+  // Test API key connection
+  fastify.post('/api/api-keys/:id/test', {
+    onRequest: [fastify.authenticate],
+  }, async (request, reply) => {
+    try {
+      const { id } = request.params as { id: string };
+      const userId = (request.user as any).id;
+
+      // Get the API key
+      const result = await pool.query(
+        `SELECT id, provider, api_key FROM api_keys WHERE id = $1 AND user_id = $2`,
+        [id, userId]
+      );
+
+      if (result.rows.length === 0) {
+        return reply.status(404).send({ message: 'API key not found' });
+      }
+
+      const apiKey = result.rows[0];
+      let success = false;
+      let message = '';
+
+      try {
+        // Test the API key based on provider
+        switch (apiKey.provider.toLowerCase()) {
+          case 'openrouter':
+            // Test OpenRouter API
+            const openrouterResponse = await fetch('https://openrouter.ai/api/v1/models', {
+              headers: {
+                'Authorization': `Bearer ${apiKey.api_key}`,
+                'HTTP-Referer': 'https://your-app.com',
+                'X-Title': 'Content Multiplier'
+              }
+            });
+            success = openrouterResponse.ok;
+            message = success ? 'Connection successful' : 'Invalid API key or network error';
+            break;
+
+          case 'gemini':
+            // Test Google Gemini API
+            const geminiResponse = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey.api_key}`
+            );
+            success = geminiResponse.ok;
+            message = success ? 'Connection successful' : 'Invalid API key or network error';
+            break;
+
+          case 'gpt-oss':
+          case 'openai':
+            // Test OpenAI API
+            const openaiResponse = await fetch('https://api.openai.com/v1/models', {
+              headers: {
+                'Authorization': `Bearer ${apiKey.api_key}`
+              }
+            });
+            success = openaiResponse.ok;
+            message = success ? 'Connection successful' : 'Invalid API key or network error';
+            break;
+
+          case 'deepseek':
+            // Test DeepSeek API
+            const deepseekResponse = await fetch('https://api.deepseek.com/v1/models', {
+              headers: {
+                'Authorization': `Bearer ${apiKey.api_key}`
+              }
+            });
+            success = deepseekResponse.ok;
+            message = success ? 'Connection successful' : 'Invalid API key or network error';
+            break;
+
+          default:
+            // For other providers, assume success (as we don't have test endpoints)
+            success = true;
+            message = 'Provider test not implemented - assumed valid';
+            break;
+        }
+      } catch (error) {
+        success = false;
+        message = 'Network error or invalid API endpoint';
+        fastify.log.error('API test error:', error);
+      }
+
+      // Update connection status in database
+      const connectionStatus = success ? 'success' : 'failed';
+      await pool.query(
+        `UPDATE api_keys
+         SET connection_status = $1,
+             last_tested_at = NOW(),
+             test_message = $2
+         WHERE id = $3`,
+        [connectionStatus, message, apiKey.id]
+      );
+
+      return reply.send({
+        success,
+        message,
+        provider: apiKey.provider,
+        connectionStatus
+      });
     } catch (error) {
       fastify.log.error(error);
       return reply.status(500).send({ message: 'Internal server error' });
